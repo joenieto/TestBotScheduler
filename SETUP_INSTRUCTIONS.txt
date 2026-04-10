@@ -1,0 +1,34 @@
+GITHUB PAGES SETUP
+==================
+
+FILES IN THIS ZIP:
+  index.html              → upload to your GitHub repo root
+  .nojekyll               → upload to your GitHub repo root (hidden file — see below)
+  README.md               → optional, documents the project
+
+ABOUT .nojekyll
+---------------
+The file named '.nojekyll' may be invisible in Windows Explorer or macOS Finder
+because it starts with a dot. There are two ways to handle this:
+
+  Option A — Use the visible copy included here:
+    A file named 'RENAME_TO_.nojekyll.txt' is included.
+    Rename it to '.nojekyll' (remove the .txt and the RENAME_TO_ prefix)
+    before uploading to GitHub.
+
+  Option B — Create it yourself (one command):
+    Windows PowerShell:   New-Item .nojekyll -ItemType File
+    macOS/Linux terminal: touch .nojekyll
+
+  Option C — Show hidden files in your extractor:
+    Windows: In File Explorer → View → Show → Hidden Items
+    macOS:   Press Cmd+Shift+. in Finder
+
+DEPLOY TO GITHUB PAGES
+-----------------------
+See README.md for full step-by-step instructions.
+Short version:
+  1. Create a GitHub repo
+  2. Upload index.html, .nojekyll (and optionally README.md)
+  3. Go to repo Settings → Pages → Deploy from branch → main / root → Save
+  4. Your app will be live at https://YOUR_USERNAME.github.io/REPO_NAME/

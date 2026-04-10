@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Task Scheduler — Automation Deployment Planner</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet"/>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.22.9/babel.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:          #f5f7fa;
+      --surface:     #ffffff;
+      --surface-dim: #f9fafb;
+      --border:      #e4e8ef;
+      --border-light:#eef0f4;
+      --text-primary:#18212e;
+      --text-secondary:#6b7585;
+      --text-muted:  #a3aab6;
+      --accent:      #3761e8;
+      --accent-light:#eef1fd;
+      --accent-dim:  #d0d9f9;
+      --weekend-bg:  #fafbfd;
+      --today-bg:    #3761e8;
+      --today-text:  #ffffff;
+      --danger:      #ef4444;
+      --shadow-sm:   0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+      --shadow-md:   0 4px 12px rgba(0,0,0,0.08), 0 2px 4px rgba(0,0,0,0.04);
+      --radius:      8px;
+      --font-ui:     'DM Sans', system-ui, sans-serif;
+      --font-mono:   'IBM Plex Mono', 'Courier New', monospace;
+    }
+
+    html, body { background: var(--bg); color: var(--text-primary); font-family: var(--font-ui); }
+
+    #root { min-height: 100vh; }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 10px; }
+
+    /* Base button reset */
+    button { font-family: var(--font-ui); cursor: pointer; }
+
+    /* Utility transitions */
+    .animate-in { animation: fadeSlideIn 0.18s ease-out both; }
+    @keyframes fadeSlideIn {
+      from { opacity: 0; transform: translateY(-6px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Task bar interaction */
+    .task-bar {
+      transition: filter 0.1s, box-shadow 0.1s, opacity 0.1s;
+    }
+    .task-bar:hover { filter: brightness(0.93); }
+    .task-bar.is-dragging { opacity: 0.65; box-shadow: 0 6px 20px rgba(0,0,0,0.15) !important; }
+
+    /* Day cell hover */
+    .day-cell { transition: background 0.1s; }
+    .day-cell:hover { background: #f0f3ff !important; }
+
+    /* Buttons */
+    .btn-primary {
+      background: var(--accent); color: #fff; border: none;
+      padding: 9px 18px; border-radius: 6px;
+      font-size: 13px; font-weight: 600; letter-spacing: 0.01em;
+      transition: background 0.15s, box-shadow 0.15s;
+      box-shadow: 0 1px 3px rgba(55,97,232,0.3);
+    }
+    .btn-primary:hover { background: #2a50d6; box-shadow: 0 3px 8px rgba(55,97,232,0.35); }
+
+    .btn-ghost {
+      background: transparent; color: var(--text-secondary);
+      border: 1px solid var(--border);
+      padding: 9px 16px; border-radius: 6px;
+      font-size: 13px; font-weight: 500;
+      transition: background 0.12s, border-color 0.12s, color 0.12s;
+    }
+    .btn-ghost:hover { background: var(--surface-dim); border-color: #cdd3dc; color: var(--text-primary); }
+
+    .btn-sm {
+      padding: 7px 14px !important;
+      font-size: 12px !important;
+    }
+
+    /* Form inputs */
+    .field-input {
+      background: var(--surface); border: 1.5px solid var(--border);
+      color: var(--text-primary); padding: 9px 12px;
+      border-radius: 6px; font-family: var(--font-ui); font-size: 13px;
+      transition: border-color 0.15s, box-shadow 0.15s;
+      width: 100%;
+    }
+    .field-input:focus {
+      outline: none; border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(55,97,232,0.1);
+    }
+    .field-input::placeholder { color: var(--text-muted); }
+
+    /* Legend chip */
+    .legend-chip {
+      display: flex; align-items: center; gap: 8px;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 20px; padding: 5px 12px 5px 8px;
+      transition: box-shadow 0.1s;
+    }
+    .legend-chip:hover { box-shadow: var(--shadow-sm); }
+
+    /* Saved indicator */
+    .save-dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: #22c55e;
+      animation: pulse-green 2s ease infinite;
+    }
+    @keyframes pulse-green {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.4; }
+    }
+
+    /* Toast */
+    .toast {
+      position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+      background: var(--text-primary); color: #fff;
+      padding: 10px 20px; border-radius: 8px;
+      font-size: 13px; font-weight: 500;
+      box-shadow: var(--shadow-md);
+      animation: toastIn 0.2s ease-out;
+      z-index: 9999;
+    }
+    @keyframes toastIn {
+      from { opacity:0; transform: translateX(-50%) translateY(8px); }
+      to   { opacity:1; transform: translateX(-50%) translateY(0); }
+    }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useRef, useEffect, useCallback } = React;
+
+/* ─── Constants ─────────────────────────────────────────── */
+const STORAGE_KEY   = 'tqa_scheduler_v1';
+const PALETTE = [
+  '#3761e8','#0d9488','#8b5cf6','#ef6c20','#ec4899',
+  '#16a34a','#dc2626','#0284c7','#7c3aed','#b45309',
+  '#0e7490','#be185d','#15803d','#c2410c','#6d28d9'
+];
+const DAY_NAMES  = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+const LANE_H     = 32;
+const HEADER_H   = 46;
+
+/* ─── Helpers ────────────────────────────────────────────── */
+function getSunday(d) {
+  const c = new Date(d); c.setHours(0,0,0,0);
+  c.setDate(c.getDate() - c.getDay()); return c;
+}
+function fmtDate(d) {
+  return d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+}
+function fmtDateFull(d) {
+  return d.toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
+}
+
+/* ─── Persistence ────────────────────────────────────────── */
+function loadState() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const { tasks, windowStartISO } = JSON.parse(raw);
+    return { tasks, windowStart: new Date(windowStartISO) };
+  } catch { return null; }
+}
+function saveState(tasks, windowStart) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+      tasks, windowStartISO: windowStart.toISOString()
+    }));
+  } catch {}
+}
+
+/* ─── Main Component ─────────────────────────────────────── */
+function TaskScheduler() {
+  const saved = loadState();
+
+  const [windowStart, setWindowStart] = useState(
+    () => saved?.windowStart || getSunday(new Date())
+  );
+  const [tasks, setTasks] = useState(() => saved?.tasks || [
+    { id:1, name:'Epic Integration',  tester:'Sarah K.', duration:5, startOffset:2,  color:PALETTE[0] },
+    { id:2, name:'UAT Validation',    tester:'Mike R.',  duration:3, startOffset:9,  color:PALETTE[1] },
+    { id:3, name:'Data Migration',    tester:'Jin L.',   duration:8, startOffset:14, color:PALETTE[2] },
+  ]);
+
+  const [showForm,  setShowForm]   = useState(false);
+  const [form,      setForm]       = useState({ name:'', tester:'', duration:3 });
+  const [formError, setFormError]  = useState('');
+  const [dragging,  setDragging]   = useState(null);
+  const [toast,     setToast]      = useState('');
+  const [lastSaved, setLastSaved]  = useState(null);
+
+  const calendarRef = useRef(null);
+  const nextId      = useRef(Math.max(0, ...(saved?.tasks||[]).map(t=>t.id)) + 1);
+  const colorIdx    = useRef((saved?.tasks||[]).length);
+  const firstRender = useRef(true);
+
+  /* ── Persist on every change ── */
+  useEffect(() => {
+    if (firstRender.current) { firstRender.current = false; return; }
+    saveState(tasks, windowStart);
+    setLastSaved(new Date());
+  }, [tasks, windowStart]);
+
+  /* ── 35-day window ── */
+  const days = Array.from({ length:35 }, (_,i) => {
+    const d = new Date(windowStart); d.setDate(d.getDate()+i); return d;
+  });
+
+  /* ── Navigation ── */
+  const shiftWindow = useCallback((dir) => {
+    setWindowStart(p => { const d=new Date(p); d.setDate(d.getDate()+dir*7); return d; });
+    setTasks(p => p.map(t => ({ ...t, startOffset: t.startOffset - dir*7 })));
+  }, []);
+
+  /* ── Task CRUD ── */
+  const addTask = () => {
+    if (!form.name.trim()) { setFormError('Task name is required.'); return; }
+    const dur = Math.max(1, Math.min(30, parseInt(form.duration)||1));
+    const task = {
+      id: nextId.current++,
+      name: form.name.trim(),
+      tester: form.tester.trim() || '—',
+      duration: dur,
+      startOffset: 1,
+      color: PALETTE[colorIdx.current++ % PALETTE.length],
+    };
+    setTasks(p => [...p, task]);
+    setForm({ name:'', tester:'', duration:3 });
+    setFormError('');
+    setShowForm(false);
+    showToast(`"${task.name}" added`);
+  };
+
+  const removeTask = (id, name) => {
+    setTasks(p => p.filter(t => t.id !== id));
+    showToast(`"${name}" removed`);
+  };
+
+  const showToast = (msg) => {
+    setToast(msg);
+    setTimeout(() => setToast(''), 2400);
+  };
+
+  /* ── Lane assignment per week ── */
+  const weeks = Array.from({ length:5 }, (_,wi) => {
+    const wS=wi*7, wE=wS+6;
+    const inWeek = tasks.filter(t => t.startOffset<=wE && t.startOffset+t.duration-1>=wS);
+    const lanes  = [];
+    inWeek.forEach(task => {
+      let placed = false;
+      for (let l=0; l<lanes.length; l++) {
+        const ok = !lanes[l].some(lt =>
+          lt.startOffset <= task.startOffset+task.duration-1 &&
+          lt.startOffset+lt.duration-1 >= task.startOffset
+        );
+        if (ok) { lanes[l].push(task); placed=true; break; }
+      }
+      if (!placed) lanes.push([task]);
+    });
+    return { wS, wE, lanes };
+  });
+
+  /* ── Drag ── */
+  const onDayHover = (di) => {
+    if (!dragging) return;
+    setTasks(p => p.map(t => t.id===dragging.taskId
+      ? { ...t, startOffset: Math.max(0, Math.min(34-t.duration+1, di-dragging.off)) } : t));
+  };
+  const onTaskDown = (e, task, cStart) => {
+    e.preventDefault(); e.stopPropagation();
+    setDragging({ taskId:task.id, off: cStart-task.startOffset });
+  };
+
+  /* ── PDF Export ── */
+  const exportPDF = async () => {
+    const el = calendarRef.current;
+    if (!el) return;
+    showToast('Generating PDF…');
+    try {
+      const canvas = await html2canvas(el, { scale:2, backgroundColor:'#ffffff', useCORS:true });
+      const W=canvas.width/2, H=canvas.height/2;
+      const pdf = new jspdf.jsPDF({ orientation:'landscape', unit:'px', format:[W,H] });
+      pdf.addImage(canvas.toDataURL('image/png'), 'PNG', 0,0, W,H);
+      const dateStr = new Date().toISOString().split('T')[0];
+      pdf.save(`task-schedule-${dateStr}.pdf`);
+      showToast('PDF saved ✓');
+    } catch(err) {
+      showToast('Export failed — try again');
+    }
+  };
+
+  const today = new Date(); today.setHours(0,0,0,0);
+  const totalDays = 30; // informational
+
+  return (
+    <div style={{ background:'var(--bg)', minHeight:'100vh', padding:'28px 32px 48px' }}
+      onMouseUp={() => setDragging(null)}>
+
+      {/* ── APP HEADER ── */}
+      <header style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'24px' }}>
+        <div style={{ display:'flex', alignItems:'center', gap:'14px' }}>
+          <div style={{ display:'flex', flexDirection:'column', gap:'1px' }}>
+            <div style={{ display:'flex', gap:'3px' }}>
+              {[0,1,2].map(i=>(
+                <div key={i} style={{ width:'5px', height:'5px', borderRadius:'1px',
+                  background: i===0?'var(--accent)':i===1?'#8b5cf6':'#0d9488' }}/>
+              ))}
+            </div>
+            <div style={{ display:'flex', gap:'3px' }}>
+              {[0,1].map(i=>(
+                <div key={i} style={{ width:'5px', height:'5px', borderRadius:'1px',
+                  background: i===0?'var(--border)':'var(--border)' }}/>
+              ))}
+            </div>
+          </div>
+          <div>
+            <h1 style={{ fontFamily:'var(--font-ui)', fontSize:'20px', fontWeight:700, color:'var(--text-primary)', letterSpacing:'-0.3px', lineHeight:1 }}>
+              Task Scheduler
+            </h1>
+            <p style={{ fontFamily:'var(--font-mono)', fontSize:'10px', color:'var(--text-muted)', letterSpacing:'0.08em', marginTop:'3px' }}>
+              AUTOMATION DEPLOYMENT PLANNER
+            </p>
+          </div>
+        </div>
+
+        <div style={{ display:'flex', alignItems:'center', gap:'10px' }}>
+          {lastSaved && (
+            <div style={{ display:'flex', alignItems:'center', gap:'6px', marginRight:'4px' }}>
+              <div className="save-dot"/>
+              <span style={{ fontFamily:'var(--font-mono)', fontSize:'10px', color:'var(--text-muted)' }}>
+                Saved {lastSaved.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}
+              </span>
+            </div>
+          )}
+          <button className="btn-ghost btn-sm" onClick={exportPDF}>
+            ↓ Export PDF
+          </button>
+          <button className="btn-primary btn-sm" onClick={() => { setShowForm(v=>!v); setFormError(''); }}>
+            {showForm ? '✕ Cancel' : '+ New Task'}
+          </button>
+        </div>
+      </header>
+
+      {/* ── NEW TASK FORM ── */}
+      {showForm && (
+        <div className="animate-in" style={{
+          background:'var(--surface)', border:'1px solid var(--border)',
+          borderRadius:'10px', padding:'20px 24px', marginBottom:'20px',
+          boxShadow:'var(--shadow-sm)'
+        }}>
+          <p style={{ fontSize:'13px', fontWeight:600, color:'var(--text-primary)', marginBottom:'16px' }}>New Task</p>
+          <div style={{ display:'flex', gap:'14px', alignItems:'flex-end', flexWrap:'wrap' }}>
+            {[
+              { label:'Task Name',     key:'name',     type:'text',   w:220, ph:'e.g. Smoke Test Cycle' },
+              { label:'Tester / Owner',key:'tester',   type:'text',   w:170, ph:'e.g. Sarah K.' },
+              { label:'Duration (days)',key:'duration', type:'number', w:120, ph:'1–30' },
+            ].map(({ label, key, type, w, ph }) => (
+              <div key={key} style={{ flex:`0 0 ${w}px` }}>
+                <label style={{ display:'block', fontSize:'11px', fontWeight:600, color:'var(--text-secondary)', letterSpacing:'0.04em', marginBottom:'6px' }}>
+                  {label.toUpperCase()}
+                </label>
+                <input type={type} min={1} max={30}
+                  value={form[key]} placeholder={ph}
+                  className="field-input"
+                  onChange={e => { setForm(p=>({...p,[key]:e.target.value})); setFormError(''); }}
+                  onKeyDown={e => e.key==='Enter' && addTask()}
+                />
+              </div>
+            ))}
+            <button className="btn-primary" onClick={addTask} style={{ height:'40px', whiteSpace:'nowrap' }}>
+              Add Task →
+            </button>
+          </div>
+          {formError && (
+            <p style={{ marginTop:'10px', fontSize:'12px', color:'var(--danger)', fontWeight:500 }}>{formError}</p>
+          )}
+        </div>
+      )}
+
+      {/* ── CALENDAR NAVIGATION ── */}
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'12px' }}>
+        <button className="btn-ghost btn-sm" onClick={() => shiftWindow(-1)}>← Prev Week</button>
+        <span style={{ fontSize:'14px', fontWeight:600, color:'var(--text-primary)' }}>
+          {fmtDate(days[0])} — {fmtDateFull(days[34])}
+        </span>
+        <button className="btn-ghost btn-sm" onClick={() => shiftWindow(1)}>Next Week →</button>
+      </div>
+
+      {/* ── CALENDAR ── */}
+      <div ref={calendarRef}
+        style={{
+          background:'var(--surface)', border:'1px solid var(--border)',
+          borderRadius:'12px', overflow:'hidden',
+          boxShadow:'var(--shadow-sm)', userSelect:'none',
+          cursor: dragging ? 'grabbing':'default'
+        }}>
+
+        {/* Weekday header */}
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(7,1fr)', borderBottom:'1px solid var(--border)', background:'var(--surface-dim)' }}>
+          {DAY_NAMES.map((d,i) => (
+            <div key={d} style={{
+              padding:'11px 0', textAlign:'center',
+              fontFamily:'var(--font-mono)', fontSize:'10px', fontWeight:600,
+              letterSpacing:'0.1em',
+              color: i===0||i===6 ? 'var(--text-muted)' : 'var(--text-secondary)',
+              borderRight: i<6 ? '1px solid var(--border-light)':undefined
+            }}>{d}</div>
+          ))}
+        </div>
+
+        {/* Week rows */}
+        {weeks.map((week, wi) => {
+          const nLanes  = Math.max(1, week.lanes.length);
+          const rowH    = HEADER_H + nLanes*(LANE_H+5) + 10;
+          return (
+            <div key={wi} style={{ position:'relative', height:`${rowH}px`, borderBottom: wi<4?'1px solid var(--border-light)':undefined }}>
+
+              {/* Day cells */}
+              <div style={{ display:'grid', gridTemplateColumns:'repeat(7,1fr)', height:'100%', position:'absolute', inset:0 }}>
+                {Array.from({length:7},(_,ci) => {
+                  const di   = wi*7+ci, date = days[di];
+                  const isToday   = date && date.getTime()===today.getTime();
+                  const isWeekend = ci===0||ci===6;
+                  const isFirst   = date?.getDate()===1;
+                  return (
+                    <div key={ci} className="day-cell"
+                      onMouseEnter={() => onDayHover(di)}
+                      onMouseUp={() => setDragging(null)}
+                      style={{
+                        borderRight: ci<6?'1px solid var(--border-light)':undefined,
+                        padding:'8px 8px 4px',
+                        background: isWeekend ? 'var(--weekend-bg)' : 'transparent',
+                      }}>
+                      <div style={{ display:'inline-flex', alignItems:'center', justifyContent:'center',
+                        width:'27px', height:'27px', borderRadius:'50%',
+                        background: isToday ? 'var(--accent)':'transparent',
+                        color: isToday ? '#fff' : isWeekend ? 'var(--text-muted)':'var(--text-secondary)',
+                        fontSize:'12px', fontWeight: isToday?700:400,
+                        fontFamily:'var(--font-mono)'
+                      }}>{date?.getDate()}</div>
+                      {isFirst && (
+                        <span style={{ fontFamily:'var(--font-mono)', fontSize:'8px', fontWeight:600,
+                          color:'var(--accent)', letterSpacing:'0.1em', marginLeft:'2px' }}>
+                          {date.toLocaleDateString('en-US',{month:'short'}).toUpperCase()}
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Task bars */}
+              <div style={{ position:'absolute', left:0, right:0, top:`${HEADER_H}px`, pointerEvents:'none' }}>
+                {week.lanes.map((lane, li) =>
+                  lane.map(task => {
+                    const tEnd   = task.startOffset + task.duration - 1;
+                    const cS     = Math.max(task.startOffset, week.wS);
+                    const cE     = Math.min(tEnd, week.wE);
+                    const col    = cS - week.wS;
+                    const span   = cE - cS + 1;
+                    const isH    = cS === task.startOffset;
+                    const isT    = cE === tEnd;
+                    const isD    = dragging?.taskId === task.id;
+
+                    /* Hex → rgba for lighter shadow */
+                    const c = task.color;
+                    return (
+                      <div key={`${task.id}-${wi}`}
+                        className={`task-bar${isD?' is-dragging':''}`}
+                        onMouseDown={e => onTaskDown(e, task, cS)}
+                        style={{
+                          position:'absolute',
+                          left:`calc(${col/7*100}% + 5px)`,
+                          width:`calc(${span/7*100}% - ${isH&&isT?10:6}px)`,
+                          top:`${li*(LANE_H+5)}px`,
+                          height:`${LANE_H}px`,
+                          background: task.color,
+                          borderRadius:`${isH?6:0}px ${isT?6:0}px ${isT?6:0}px ${isH?6:0}px`,
+                          display:'flex', alignItems:'center', padding:'0 10px',
+                          pointerEvents:'all', cursor: isD?'grabbing':'grab',
+                          zIndex: isD?20:5, overflow:'hidden',
+                          boxShadow:`0 1px 4px ${task.color}55`,
+                          transition: isD?'none':'left 0.07s,width 0.07s',
+                          borderLeft:  !isH?`2px solid rgba(255,255,255,0.25)`:undefined,
+                          borderRight: !isT?`2px solid rgba(255,255,255,0.25)`:undefined,
+                        }}>
+                        {isH && (
+                          <div style={{ overflow:'hidden', whiteSpace:'nowrap', textOverflow:'ellipsis', lineHeight:1.35 }}>
+                            <div style={{ fontFamily:'var(--font-ui)', fontSize:'11px', fontWeight:600, color:'rgba(255,255,255,0.95)', letterSpacing:'0.01em' }}>{task.name}</div>
+                            <div style={{ fontFamily:'var(--font-mono)', fontSize:'9px', color:'rgba(255,255,255,0.65)', marginTop:'1px' }}>{task.tester} · {task.duration}d</div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+            </div>
+          );
+        })}
+      </div>
+
+      {/* ── TASK LEGEND ── */}
+      <div style={{ marginTop:'20px' }}>
+        {tasks.length > 0 ? (
+          <>
+            <p style={{ fontFamily:'var(--font-mono)', fontSize:'10px', color:'var(--text-muted)', letterSpacing:'0.08em', marginBottom:'10px' }}>
+              TASK REGISTRY · {tasks.length} task{tasks.length!==1?'s':''} scheduled
+            </p>
+            <div style={{ display:'flex', flexWrap:'wrap', gap:'8px' }}>
+              {tasks.map(t => {
+                const s = new Date(windowStart); s.setDate(s.getDate()+t.startOffset);
+                const e = new Date(s); e.setDate(e.getDate()+t.duration-1);
+                return (
+                  <div key={t.id} className="legend-chip">
+                    <div style={{ width:'10px', height:'10px', borderRadius:'3px', background:t.color, flexShrink:0 }}/>
+                    <span style={{ fontSize:'13px', fontWeight:600, color:'var(--text-primary)' }}>{t.name}</span>
+                    <span style={{ color:'var(--border)' }}>·</span>
+                    <span style={{ fontFamily:'var(--font-mono)', fontSize:'11px', color:'var(--text-secondary)' }}>{t.tester}</span>
+                    <span style={{ color:'var(--border)' }}>·</span>
+                    <span style={{ fontFamily:'var(--font-mono)', fontSize:'11px', color:'var(--text-muted)' }}>{t.duration}d</span>
+                    <span style={{ color:'var(--border)' }}>·</span>
+                    <span style={{ fontFamily:'var(--font-mono)', fontSize:'10px', color:'var(--text-muted)' }}>
+                      {fmtDate(s)} → {fmtDate(e)}
+                    </span>
+                    <button
+                      onClick={() => removeTask(t.id, t.name)}
+                      style={{ background:'none', border:'none', color:'var(--text-muted)', fontSize:'14px', lineHeight:1, padding:'0 0 0 2px', cursor:'pointer', transition:'color 0.1s' }}
+                      onMouseEnter={e=>e.target.style.color='var(--danger)'}
+                      onMouseLeave={e=>e.target.style.color='var(--text-muted)'}
+                    >×</button>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        ) : (
+          <div style={{ textAlign:'center', padding:'24px 0', color:'var(--text-muted)', fontSize:'13px' }}>
+            No tasks scheduled — click <strong>+ New Task</strong> to get started.
+          </div>
+        )}
+      </div>
+
+      {/* Footer */}
+      <div style={{ marginTop:'32px', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+        <span style={{ fontFamily:'var(--font-mono)', fontSize:'10px', color:'var(--border)', letterSpacing:'0.05em' }}>
+          TQA SOLUTIONS · AUTOMATION DEPLOYMENT PLANNER
+        </span>
+        <span style={{ fontFamily:'var(--font-mono)', fontSize:'10px', color:'var(--border)' }}>
+          {new Date().getFullYear()}
+        </span>
+      </div>
+
+      {/* Toast */}
+      {toast && <div className="toast">{toast}</div>}
+
+    </div>
+  );
+}
+
+/* ─── Mount ─────────────────────────────────────────────── */
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<TaskScheduler />);
+</script>
+</body>
+</html>
