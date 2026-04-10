@@ -141,6 +141,51 @@
       from { opacity:0; transform: translateX(-50%) translateY(8px); }
       to   { opacity:1; transform: translateX(-50%) translateY(0); }
     }
+
+    /* Edit modal */
+    .modal-overlay {
+      position: fixed; inset: 0;
+      background: rgba(15,20,30,0.35);
+      backdrop-filter: blur(3px);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 1000;
+      animation: overlayIn 0.15s ease-out;
+    }
+    @keyframes overlayIn {
+      from { opacity:0; } to { opacity:1; }
+    }
+    .modal-panel {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 14px; padding: 28px 28px 24px;
+      width: 440px; max-width: calc(100vw - 40px);
+      box-shadow: 0 20px 60px rgba(0,0,0,0.15), 0 4px 16px rgba(0,0,0,0.08);
+      animation: panelIn 0.18s ease-out;
+    }
+    @keyframes panelIn {
+      from { opacity:0; transform: scale(0.96) translateY(8px); }
+      to   { opacity:1; transform: scale(1) translateY(0); }
+    }
+
+    /* Color swatch */
+    .color-swatch {
+      width: 22px; height: 22px; border-radius: 5px;
+      border: 2px solid transparent; cursor: pointer;
+      transition: transform 0.1s, border-color 0.1s;
+      flex-shrink: 0;
+    }
+    .color-swatch:hover { transform: scale(1.18); }
+    .color-swatch.selected { border-color: var(--text-primary); transform: scale(1.12); }
+
+    /* Danger button */
+    .btn-danger {
+      background: transparent; color: var(--danger);
+      border: 1px solid #fca5a5;
+      padding: 9px 16px; border-radius: 6px;
+      font-size: 13px; font-weight: 500;
+      transition: background 0.12s, border-color 0.12s;
+    }
+    .btn-danger:hover { background: #fef2f2; border-color: var(--danger); }
+    .btn-danger.confirming { background: var(--danger); color: #fff; border-color: var(--danger); }
   </style>
 </head>
 <body>
@@ -150,15 +195,16 @@
 const { useState, useRef, useEffect, useCallback } = React;
 
 /* ─── Constants ─────────────────────────────────────────── */
-const STORAGE_KEY   = 'tqa_scheduler_v1';
+const STORAGE_KEY = 'tqa_scheduler_v1';
 const PALETTE = [
   '#3761e8','#0d9488','#8b5cf6','#ef6c20','#ec4899',
   '#16a34a','#dc2626','#0284c7','#7c3aed','#b45309',
   '#0e7490','#be185d','#15803d','#c2410c','#6d28d9'
 ];
-const DAY_NAMES  = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-const LANE_H     = 32;
-const HEADER_H   = 46;
+const DAY_NAMES = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+const LANE_H    = 32;
+const HEADER_H  = 46;
+const DRAG_THRESHOLD = 5; // px movement before drag mode activates
 
 /* ─── Helpers ────────────────────────────────────────────── */
 function getSunday(d) {
@@ -205,14 +251,19 @@ function TaskScheduler() {
   const [showForm,  setShowForm]   = useState(false);
   const [form,      setForm]       = useState({ name:'', tester:'', duration:3 });
   const [formError, setFormError]  = useState('');
-  const [dragging,  setDragging]   = useState(null);
+  const [dragging,  setDragging]   = useState(null);  // { taskId, off }
+  const [editing,   setEditing]    = useState(null);  // task object being edited
+  const [editForm,  setEditForm]   = useState({});    // live form values in modal
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [toast,     setToast]      = useState('');
   const [lastSaved, setLastSaved]  = useState(null);
 
-  const calendarRef = useRef(null);
-  const nextId      = useRef(Math.max(0, ...(saved?.tasks||[]).map(t=>t.id)) + 1);
-  const colorIdx    = useRef((saved?.tasks||[]).length);
-  const firstRender = useRef(true);
+  const calendarRef   = useRef(null);
+  const nextId        = useRef(Math.max(0, ...(saved?.tasks||[]).map(t=>t.id)) + 1);
+  const colorIdx      = useRef((saved?.tasks||[]).length);
+  const firstRender   = useRef(true);
+  const mouseDownPos  = useRef(null); // { x, y } to detect click vs drag
+  const didDrag       = useRef(false);
 
   /* ── Persist on every change ── */
   useEffect(() => {
@@ -253,7 +304,7 @@ function TaskScheduler() {
 
   const removeTask = (id, name) => {
     setTasks(p => p.filter(t => t.id !== id));
-    showToast(`"${name}" removed`);
+    showToast(`"${name}" deleted`);
   };
 
   const showToast = (msg) => {
@@ -280,15 +331,70 @@ function TaskScheduler() {
     return { wS, wE, lanes };
   });
 
-  /* ── Drag ── */
+  /* ── Drag — distinguishes click vs drag via movement threshold ── */
   const onDayHover = (di) => {
-    if (!dragging) return;
+    if (!dragging || !didDrag.current) return;
     setTasks(p => p.map(t => t.id===dragging.taskId
       ? { ...t, startOffset: Math.max(0, Math.min(34-t.duration+1, di-dragging.off)) } : t));
   };
+
   const onTaskDown = (e, task, cStart) => {
     e.preventDefault(); e.stopPropagation();
-    setDragging({ taskId:task.id, off: cStart-task.startOffset });
+    mouseDownPos.current = { x: e.clientX, y: e.clientY };
+    didDrag.current = false;
+    setDragging({ taskId:task.id, off: cStart-task.startOffset, pendingTask: task });
+  };
+
+  // Global mousemove to detect drag threshold and move task
+  useEffect(() => {
+    const onMove = (e) => {
+      if (!dragging || !mouseDownPos.current) return;
+      const dx = e.clientX - mouseDownPos.current.x;
+      const dy = e.clientY - mouseDownPos.current.y;
+      if (Math.sqrt(dx*dx+dy*dy) > DRAG_THRESHOLD) {
+        didDrag.current = true;
+      }
+    };
+    window.addEventListener('mousemove', onMove);
+    return () => window.removeEventListener('mousemove', onMove);
+  }, [dragging]);
+
+  const onTaskUp = (task) => {
+    if (dragging && !didDrag.current) {
+      // It was a click — open edit modal
+      openEdit(task);
+    }
+    setDragging(null);
+    mouseDownPos.current = null;
+  };
+
+  /* ── Edit modal ── */
+  const openEdit = (task) => {
+    setEditing(task);
+    setEditForm({ name:task.name, tester:task.tester, duration:task.duration, color:task.color });
+    setConfirmDelete(false);
+  };
+
+  const closeEdit = () => {
+    setEditing(null);
+    setConfirmDelete(false);
+  };
+
+  const saveEdit = () => {
+    if (!editForm.name?.trim()) return;
+    const dur = Math.max(1, Math.min(30, parseInt(editForm.duration)||1));
+    setTasks(p => p.map(t => t.id===editing.id
+      ? { ...t, name:editForm.name.trim(), tester:editForm.tester.trim()||'—', duration:dur, color:editForm.color }
+      : t
+    ));
+    showToast(`"${editForm.name.trim()}" updated`);
+    closeEdit();
+  };
+
+  const deleteTask = (id, name) => {
+    setTasks(p => p.filter(t => t.id !== id));
+    showToast(`"${name}" deleted`);
+    closeEdit();
   };
 
   /* ── PDF Export ── */
@@ -314,7 +420,81 @@ function TaskScheduler() {
 
   return (
     <div style={{ background:'var(--bg)', minHeight:'100vh', padding:'28px 32px 48px' }}
-      onMouseUp={() => setDragging(null)}>
+      onMouseUp={() => { if (dragging && didDrag.current) setDragging(null); }}>
+
+      {/* ── EDIT MODAL ── */}
+      {editing && (
+        <div className="modal-overlay" onMouseDown={e => { if(e.target===e.currentTarget) closeEdit(); }}>
+          <div className="modal-panel">
+            {/* Modal header */}
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'22px' }}>
+              <div>
+                <h2 style={{ fontSize:'16px', fontWeight:700, color:'var(--text-primary)', letterSpacing:'-0.2px' }}>Edit Task</h2>
+                <p style={{ fontSize:'11px', color:'var(--text-muted)', marginTop:'2px', fontFamily:'var(--font-mono)' }}>Click outside to cancel</p>
+              </div>
+              <button onClick={closeEdit}
+                style={{ background:'none', border:'none', fontSize:'20px', color:'var(--text-muted)', cursor:'pointer', lineHeight:1, padding:'2px 6px', borderRadius:'4px' }}
+                onMouseEnter={e=>e.target.style.color='var(--text-primary)'}
+                onMouseLeave={e=>e.target.style.color='var(--text-muted)'}
+              >×</button>
+            </div>
+
+            {/* Fields */}
+            {[
+              { label:'TASK NAME',      key:'name',     type:'text',   ph:'e.g. Smoke Test Cycle' },
+              { label:'TESTER / OWNER', key:'tester',   type:'text',   ph:'e.g. Sarah K.' },
+              { label:'DURATION (DAYS)',key:'duration', type:'number', ph:'1–30' },
+            ].map(({ label, key, type, ph }) => (
+              <div key={key} style={{ marginBottom:'14px' }}>
+                <label style={{ display:'block', fontSize:'10px', fontWeight:600, color:'var(--text-secondary)', letterSpacing:'0.08em', marginBottom:'6px' }}>
+                  {label}
+                </label>
+                <input type={type} min={1} max={30}
+                  value={editForm[key] ?? ''} placeholder={ph}
+                  className="field-input"
+                  onChange={e => setEditForm(p=>({...p,[key]:e.target.value}))}
+                  onKeyDown={e => e.key==='Enter' && saveEdit()}
+                />
+              </div>
+            ))}
+
+            {/* Color picker */}
+            <div style={{ marginBottom:'22px' }}>
+              <label style={{ display:'block', fontSize:'10px', fontWeight:600, color:'var(--text-secondary)', letterSpacing:'0.08em', marginBottom:'8px' }}>
+                COLOR
+              </label>
+              <div style={{ display:'flex', flexWrap:'wrap', gap:'7px' }}>
+                {PALETTE.map(c => (
+                  <div key={c} className={`color-swatch${editForm.color===c?' selected':''}`}
+                    style={{ background:c, borderColor: editForm.color===c ? 'var(--text-primary)':'transparent' }}
+                    onClick={() => setEditForm(p=>({...p,color:c}))}
+                  />
+                ))}
+              </div>
+            </div>
+
+            {/* Action row */}
+            <div style={{ display:'flex', gap:'8px', justifyContent:'space-between', alignItems:'center' }}>
+              {/* Delete with confirm */}
+              <button
+                className={`btn-danger${confirmDelete?' confirming':''}`}
+                onClick={() => {
+                  if (!confirmDelete) { setConfirmDelete(true); return; }
+                  deleteTask(editing.id, editing.name);
+                }}
+                onMouseLeave={() => setConfirmDelete(false)}
+              >
+                {confirmDelete ? '⚠ Confirm Delete' : '🗑 Delete Task'}
+              </button>
+
+              <div style={{ display:'flex', gap:'8px' }}>
+                <button className="btn-ghost btn-sm" onClick={closeEdit}>Cancel</button>
+                <button className="btn-primary btn-sm" onClick={saveEdit}>Save Changes</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── APP HEADER ── */}
       <header style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'24px' }}>
@@ -488,6 +668,8 @@ function TaskScheduler() {
                       <div key={`${task.id}-${wi}`}
                         className={`task-bar${isD?' is-dragging':''}`}
                         onMouseDown={e => onTaskDown(e, task, cS)}
+                        onMouseUp={e => { e.stopPropagation(); onTaskUp(task); }}
+                        title="Drag to move · Click to edit"
                         style={{
                           position:'absolute',
                           left:`calc(${col/7*100}% + 5px)`,
@@ -533,7 +715,7 @@ function TaskScheduler() {
                 const s = new Date(windowStart); s.setDate(s.getDate()+t.startOffset);
                 const e = new Date(s); e.setDate(e.getDate()+t.duration-1);
                 return (
-                  <div key={t.id} className="legend-chip">
+                  <div key={t.id} className="legend-chip" style={{ cursor:'default' }}>
                     <div style={{ width:'10px', height:'10px', borderRadius:'3px', background:t.color, flexShrink:0 }}/>
                     <span style={{ fontSize:'13px', fontWeight:600, color:'var(--text-primary)' }}>{t.name}</span>
                     <span style={{ color:'var(--border)' }}>·</span>
@@ -545,8 +727,16 @@ function TaskScheduler() {
                       {fmtDate(s)} → {fmtDate(e)}
                     </span>
                     <button
+                      onClick={() => openEdit(t)}
+                      style={{ background:'none', border:'none', color:'var(--text-muted)', fontSize:'12px', lineHeight:1, padding:'0 0 0 2px', cursor:'pointer', transition:'color 0.1s' }}
+                      title="Edit task"
+                      onMouseEnter={e=>e.target.style.color='var(--accent)'}
+                      onMouseLeave={e=>e.target.style.color='var(--text-muted)'}
+                    >✎</button>
+                    <button
                       onClick={() => removeTask(t.id, t.name)}
-                      style={{ background:'none', border:'none', color:'var(--text-muted)', fontSize:'14px', lineHeight:1, padding:'0 0 0 2px', cursor:'pointer', transition:'color 0.1s' }}
+                      style={{ background:'none', border:'none', color:'var(--text-muted)', fontSize:'14px', lineHeight:1, padding:'0', cursor:'pointer', transition:'color 0.1s' }}
+                      title="Delete task"
                       onMouseEnter={e=>e.target.style.color='var(--danger)'}
                       onMouseLeave={e=>e.target.style.color='var(--text-muted)'}
                     >×</button>
